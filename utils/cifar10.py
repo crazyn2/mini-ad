@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import random
 from lightning.fabric import seed_everything
-import pytorch_lightning as pl
+import lightning as pl
 
 
 def seed_worker(worker_id):
