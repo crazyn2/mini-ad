@@ -1,0 +1,22 @@
+{
+  "flake8.args": [
+    "--ignore=E402,W503,W504",
+  ],
+  "[python]": {
+    "editor.formatOnSaveMode": "file",
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "eeyore.yapf"
+  },
+  "shellcheck.customArgs": [
+    "-x"
+  ],
+  "vim.handleKeys": {
+    "<C-z>": false,
+    "<C-c>": false,
+    "<C-v>": false,
+    "<C-y>": false,
+    "<C-e>": false,
+    "<C-w>": false,
+    "<C-p>": false,
+  },
+}

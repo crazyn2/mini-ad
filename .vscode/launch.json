@@ -1,0 +1,51 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Current File",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      // "program": "${workspaceFolder}/main/cifar10/msd/aev1v3msdv1op.py",
+      // "program": "main/cifar10/memsd/lenet_memae.py",
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "PYTHONPATH": "${workspaceFolder}",
+        // "CUBLAS_WORKSPACE_CONFIG":":16:8",
+        "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+        "LD_PRELOAD": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6",
+      },
+      "args": [
+        "--seed",
+        "0",
+        "--pre_epochs",
+        "200",
+        // "20",
+        // "2",
+        "--progress_bar",
+        "--visual",
+        "--epochs",
+        "200",
+        // "2",
+        "--normal_class",
+        "1",
+        "--log_path",
+        "${workspaceFolder}",
+        "--batch_size",
+        "100",
+        "--n_trials",
+        // "150",
+        "2",
+        "--sampler",
+        "random",
+        "--monitor",
+        "mse",
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+  ]
+}
