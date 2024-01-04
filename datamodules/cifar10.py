@@ -19,7 +19,7 @@ import numpy as np
 
 sys.path.append(os.path.dirname(__file__))
 sys.path.append(os.getcwd())
-from preprocessing import global_contrast_normalization
+from utils import global_contrast_normalization
 from utils import get_target_label_idx
 
 
@@ -92,13 +92,14 @@ class CIFAR10Dm(pl.LightningDataModule):
         self.gcn = gcn
         self.gen = torch.Generator()
         self.gen.manual_seed(self.seed)
-
         # def prepare_data(self):
         #     # download
         #     CIFAR10(self.root, train=True, download=True)
         #     CIFAR10(self.root, train=False, download=True)
 
         # def setup(self, stage: str) -> None:
+        # self.gen = torch.Generator()
+        # self.gen.manual_seed(self.seed)
 
         # Pre-computed min and max values (after applying GCN)
         # from train data per class
@@ -171,19 +172,16 @@ class CIFAR10Dm(pl.LightningDataModule):
             # download=True,
             target_transform=target_transform,
         )
-
-    def train_dataloader(self):
-        return DataLoader(self.train_cifar10,
-                          batch_size=self.batch_size,
-                          num_workers=self.num_workers,
-                          worker_init_fn=seed_worker,
-                          generator=self.gen,
-                          persistent_workers=True,
-                          shuffle=True,
-                          drop_last=True)
-
-    def test_dataloader(self):
-        return DataLoader(
+        self.train_loader = DataLoader(
+            self.train_cifar10,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            #    worker_init_fn=seed_worker,
+            generator=self.gen,
+            persistent_workers=True,
+            shuffle=True,
+            drop_last=True)
+        self.test_loader = DataLoader(
             self.test_cifar10,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
@@ -192,6 +190,35 @@ class CIFAR10Dm(pl.LightningDataModule):
             generator=self.gen,
             #   shuffle=True,
             drop_last=True)
+
+    def train_dataloader(self):
+        # pl.seed_everything(self.seed, workers=True)
+        gen = torch.Generator()
+        gen.manual_seed(self.seed)
+        return DataLoader(self.train_cifar10,
+                          batch_size=self.batch_size,
+                          num_workers=self.num_workers,
+                          worker_init_fn=seed_worker,
+                          generator=gen,
+                          persistent_workers=True,
+                          shuffle=True,
+                          drop_last=True)
+        # return self.train_loader
+
+    def test_dataloader(self):
+        gen = torch.Generator()
+        gen.manual_seed(self.seed)
+        # # pl.seed_everything(self.seed, workers=True)
+        return DataLoader(
+            self.test_cifar10,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            worker_init_fn=seed_worker,
+            persistent_workers=True,
+            generator=gen,
+            #   shuffle=True,
+            drop_last=True)
+        # return self.test_loader
 
     def load_dataloader(self, dataset):
         return DataLoader(
@@ -205,368 +232,19 @@ class CIFAR10Dm(pl.LightningDataModule):
             drop_last=True)
 
     def val_dataloader(self):
+        # pl.seed_everything(self.seed, workers=True)
+        gen = torch.Generator()
+        gen.manual_seed(self.seed)
         return DataLoader(
             self.test_cifar10,
             batch_size=self.batch_size,
-            num_workers=self.num_workers,
             worker_init_fn=seed_worker,
+            num_workers=self.num_workers,
             persistent_workers=True,
-            generator=self.gen,
+            generator=gen,
             #   shuffle=True,
             drop_last=True)
-
-
-def my_affine_tch(img, flip, tx, ty, k_90_rotate):
-    # img = img.copy()
-    if flip:
-        img = torch.flip(img, dims=[1])
-    if k_90_rotate != 0:
-        img = F.affine(img,
-                       scale=1,
-                       shear=0,
-                       angle=k_90_rotate,
-                       translate=(tx, ty),
-                       fill=0)
-
-    return img
-
-
-class CIFAR10GmTranV1(CIFAR10Dm):
-
-    def __init__(
-        self,
-        batch_size,
-        normal_class,
-        seed,
-        radio=0,
-        num_workers=4,
-        root="./data/",
-        dataset_name="cifar10",
-        gcn=False,
-        max_tx=8,
-        max_ty=8,
-    ):
-        super().__init__(
-            batch_size=batch_size,
-            normal_class=normal_class,
-            seed=seed,
-            radio=radio,
-            num_workers=num_workers,
-            root=root,
-            dataset_name=dataset_name,
-            gcn=gcn,
-        )
-        self.max_tx = max_tx
-        self.max_ty = max_ty
-
-    def setup(self, stage: str) -> None:
-        min_max = [(-28.94083453598571, 13.802961825439636),
-                   (-6.681770233365245, 9.158067708230273),
-                   (-34.924463588638204, 14.419298165027628),
-                   (-10.599172931391799, 11.093187820377565),
-                   (-11.945022995801637, 10.628045447867583),
-                   (-9.691969487694928, 8.947014686472365),
-                   (-6.876682005899029, 12.282371383343161),
-                   (-15.603507135507172, 15.2464923804279),
-                   (-6.132882973622672, 8.046098172351265)]
-        gcn_transform = [
-            transforms.Lambda(
-                lambda x: global_contrast_normalization(x, scale='l1')),
-            transforms.Normalize([min_max[self.normal_class][0]] * 3, [
-                min_max[self.normal_class][1] - min_max[self.normal_class][0]
-            ] * 3)
-        ]
-        transforms_list = [transforms.ToTensor()]
-        if self.gcn:
-            transforms_list += gcn_transform
-
-        else:
-            transforms_list.append(transforms.Normalize([0.5] * 3, [0.5] * 3))
-        # transforms.RandomAffine
-        transform = transforms.Compose(transforms_list)
-        target_transform = transforms.Lambda(
-            lambda x: int(x in self.outlier_classes))
-        self.test_cifar10 = CIFAR10(root=self.root,
-                                    train=False,
-                                    transform=transform,
-                                    target_transform=target_transform,
-                                    download=False)
-
-        if stage == "fit":
-            self.train_datasets = []
-            self.test_datasets = []
-            gmtran_class = 0
-            for flip, tx, ty, k_90_rotate in itertools.product(
-                (False, True), (0, -self.max_tx, self.max_tx),
-                (0, -self.max_ty, self.max_ty), range(4)):
-
-                subtrain_cifar10 = CIFAR10(
-                    root=self.root,
-                    train=True,
-                    transform=transform,
-                    # target_transform=target_transform,
-                    download=False)
-
-                subtrain_cifar10.data = np.load(
-                    "./data/gmtran/data_cifar10_%d.npy" % gmtran_class)
-                subtrain_cifar10.targets = np.load(
-                    "./data/gmtran/targets_cifar10_%d.npy" % gmtran_class)
-                self.train_datasets.append(subtrain_cifar10)
-
-                subtrain_test_cifar10 = CIFAR10(
-                    root=self.root,
-                    train=False,
-                    transform=transform,
-                    target_transform=target_transform,
-                    download=False)
-
-                subtrain_test_cifar10.data = np.load(
-                    "./data/gmtran/test_data_cifar10_%d.npy" % gmtran_class)
-                subtrain_test_cifar10.targets = np.load(
-                    "./data/gmtran/test_targets_cifar10_%d.npy" % gmtran_class)
-                self.test_datasets.append(subtrain_test_cifar10)
-                gmtran_class += 1
-                # break
-            self.train_cifar10 = ConcatDataset(self.train_datasets)
-            self.test_cifar10 = ConcatDataset(self.test_datasets)
-
-
-class CIFAR10GmTranV2(CIFAR10Dm):
-
-    def __init__(
-        self,
-        batch_size,
-        normal_class,
-        seed,
-        radio=0,
-        num_workers=4,
-        root="./data/",
-        dataset_name="cifar10",
-        gcn=False,
-        max_tx=8,
-        max_ty=8,
-    ):
-        super().__init__(
-            batch_size=batch_size,
-            normal_class=normal_class,
-            seed=seed,
-            radio=radio,
-            num_workers=num_workers,
-            root=root,
-            dataset_name=dataset_name,
-            gcn=gcn,
-        )
-        self.max_tx = max_tx
-        self.max_ty = max_ty
-
-    def setup(self, stage: str) -> None:
-        min_max = [(-28.94083453598571, 13.802961825439636),
-                   (-6.681770233365245, 9.158067708230273),
-                   (-34.924463588638204, 14.419298165027628),
-                   (-10.599172931391799, 11.093187820377565),
-                   (-11.945022995801637, 10.628045447867583),
-                   (-9.691969487694928, 8.947014686472365),
-                   (-6.876682005899029, 12.282371383343161),
-                   (-15.603507135507172, 15.2464923804279),
-                   (-6.132882973622672, 8.046098172351265)]
-        gcn_transform = [
-            transforms.Lambda(
-                lambda x: global_contrast_normalization(x, scale='l1')),
-            transforms.Normalize([min_max[self.normal_class][0]] * 3, [
-                min_max[self.normal_class][1] - min_max[self.normal_class][0]
-            ] * 3)
-        ]
-        transforms_list = [transforms.ToTensor()]
-        if self.gcn:
-            transforms_list += gcn_transform
-
-        else:
-            transforms_list.append(transforms.Normalize([0.5] * 3, [0.5] * 3))
-        # transforms.RandomAffine
-        transform = transforms.Compose(transforms_list)
-        target_transform = transforms.Lambda(
-            lambda x: int(x in self.outlier_classes))
-        self.test_cifar10 = CIFAR10(root=self.root,
-                                    train=False,
-                                    transform=transform,
-                                    target_transform=target_transform,
-                                    download=False)
-
-        if stage == "fit":
-            self.train_datasets = []
-            self.test_datasets = []
-            gmtran_class = 0
-            for _, _, _, _ in itertools.product((False, True),
-                                                (0, -self.max_tx, self.max_tx),
-                                                (0, -self.max_ty, self.max_ty),
-                                                range(4)):
-
-                subtrain_cifar10 = CIFAR10(root=self.root,
-                                           train=True,
-                                           transform=transform,
-                                           target_transform=target_transform,
-                                           download=False)
-
-                subtrain_cifar10.data = np.load(
-                    "./data/gmtran/data_cifar10_%d.npy" % gmtran_class)
-                subtrain_cifar10.targets = np.load(
-                    "./data/gmtran/targets_cifar10_%d.npy" % gmtran_class)
-                self.train_datasets.append(subtrain_cifar10)
-
-                subtrain_test_cifar10 = CIFAR10(
-                    root=self.root,
-                    train=False,
-                    transform=transform,
-                    target_transform=target_transform,
-                    download=False)
-
-                subtrain_test_cifar10.data = np.load(
-                    "./data/gmtran/test_data_cifar10_%d.npy" % gmtran_class)
-                subtrain_test_cifar10.targets = np.load(
-                    "./data/gmtran/test_targets_cifar10_%d.npy" % gmtran_class)
-                self.test_datasets.append(subtrain_test_cifar10)
-                gmtran_class += 1
-                # break
-            self.train_cifar10 = ConcatDataset(self.train_datasets)
-            self.test_cifar10 = ConcatDataset(self.test_datasets)
-
-
-class CIFAR10GmTranV3(CIFAR10Dm):
-
-    def __init__(
-        self,
-        batch_size,
-        normal_class,
-        seed,
-        radio=0,
-        num_workers=4,
-        root="./data/",
-        dataset_name="cifar10",
-        gcn=False,
-        max_tx=8,
-        max_ty=8,
-        preload=True,
-    ):
-        super().__init__(
-            batch_size=batch_size,
-            normal_class=normal_class,
-            seed=seed,
-            radio=radio,
-            num_workers=num_workers,
-            root=root,
-            dataset_name=dataset_name,
-            gcn=gcn,
-        )
-        self.max_tx = max_tx
-        self.max_ty = max_ty
-        self.preload = preload
-
-    def setup(self, stage: str) -> None:
-        min_max = [(-28.94083453598571, 13.802961825439636),
-                   (-6.681770233365245, 9.158067708230273),
-                   (-34.924463588638204, 14.419298165027628),
-                   (-10.599172931391799, 11.093187820377565),
-                   (-11.945022995801637, 10.628045447867583),
-                   (-9.691969487694928, 8.948326776180823),
-                   (-9.174940012342555, 13.847014686472365),
-                   (-6.876682005899029, 12.282371383343161),
-                   (-15.603507135507172, 15.2464923804279),
-                   (-6.132882973622672, 8.046098172351265)]
-        gcn_transform = [
-            transforms.Lambda(
-                lambda x: global_contrast_normalization(x, scale='l1')),
-            transforms.Normalize([min_max[self.normal_class][0]] * 3, [
-                min_max[self.normal_class][1] - min_max[self.normal_class][0]
-            ] * 3)
-        ]
-        affine_transforms = []
-
-        if stage == "fit":
-            self.train_datasets = []
-            self.test_datasets = []
-            # gmtran_class = 0
-            for flip, tx, ty, k_90_rotate in itertools.product(
-                (False, True), (0, -self.max_tx, self.max_tx),
-                (0, -self.max_ty, self.max_ty), range(4)):
-                affine_transforms.append(
-                    transforms.Lambda(lambda img: my_affine_tch(
-                        img, flip, tx, ty, k_90_rotate)))
-            for i in range(len(affine_transforms)):
-                # geo_target_transform = transforms.Lambda(
-                #     lambda x: 0 if x not in self.outlier_classes else i + 1)
-
-                geo_target_transform = transforms.Lambda(lambda x: i)
-                transform = [
-                    transforms.Pad([16, 16], padding_mode='reflect'),
-                    transforms.ToTensor()
-                ] + [affine_transforms[i]]
-                transform += [transforms.CenterCrop((32, 32))]
-                # GCN
-                if self.gcn:
-                    transform += gcn_transform
-                else:
-                    transform += [transforms.Normalize([0.5] * 3, [0.5] * 3)]
-                transform = transforms.Compose(transform)
-                subtrain_cifar10 = CIFAR10(
-                    root=self.root,
-                    train=True,
-                    transform=transform,
-                    target_transform=geo_target_transform,
-                    download=False)
-
-                train_indices = [
-                    idx for idx, target in enumerate(subtrain_cifar10.targets)
-                    if target in self.normal_classes
-                ]
-                dirty_indices = [
-                    idx for idx, target in enumerate(subtrain_cifar10.targets)
-                    if target not in self.normal_classes
-                ]
-                train_indices += sample(
-                    dirty_indices,
-                    int(len(train_indices) * self.radio / (1 - self.radio)))
-                # subtrain_cifar10.targets = [gmtran_class] * len(
-                #     subtrain_cifar10.targets)
-                subtrain_cifar10 = Subset(subtrain_cifar10, train_indices)
-                self.train_datasets.append(subtrain_cifar10)
-                # test
-                # subtrain_test_cifar10 = CIFAR10(
-                #     root=self.root,
-                #     train=False,
-                #     transform=transform,
-                #     target_transform=target_transform,
-                #     download=False)
-                # for i in range(len(subtrain_test_cifar10.data)):
-
-                #     subtrain_test_cifar10.data[i] = my_affine_tch(
-                #         subtrain_test_cifar10.data[i], flip, tx, ty,
-                #         k_90_rotate)
-                # np.save(
-                #     "./data/gmtran_tch/test_data_cifar10_%d.npy" %
-                #     gmtran_class, subtrain_test_cifar10.data)
-                # np.save(
-                #     "./data/gmtran_tch/test_targets_cifar10_%d.npy" %
-                #     gmtran_class, subtrain_test_cifar10.targets)
-                # self.test_datasets.append(subtrain_test_cifar10)
-                # gmtran_class += 1
-            self.train_cifar10 = ConcatDataset(self.train_datasets)
-            # self.test_cifar10 = ConcatDataset(self.test_datasets)
-
-            # train_indices = [
-            #     idx for idx, target in enumerate(train_cifar10.targets)
-            #     if target in self.normal_classes
-            # ]
-            # dirty_indices = [
-            #     idx for idx, target in enumerate(train_cifar10.targets)
-            #     if target not in self.normal_classes
-            # ]
-            # train_indices += sample(
-            #     dirty_indices,
-            #     int(len(train_indices) * self.radio / (1 - self.radio)))
-            # # dataloader shuffle=True will mix the order of normal and abnormal
-            # # extract the normal class of cifar10 train dataset
-            # self.train_cifar10 = Subset(train_cifar10, train_indices)
-            # self.train_cifar10 = train_cifar10
+        # return self.test_loader
 
 
 def get_gcn():
@@ -610,58 +288,65 @@ def get_gcn():
     print(list(zip(MIN, MAX)))
 
 
-def geo_tran():
-    transform = transforms.Compose([
-        transforms.Pad([105, 105], padding_mode='reflect'),
-        transforms.ToTensor(),
-        transforms.CenterCrop((32, 32)),
-        transforms.Normalize([0.5] * 3, [0.5] * 3)
-    ])
-    train_set = CIFAR10(
-        root="./data/",
-        train=True,
-        #  download=True,
-        transform=transform,
-        target_transform=None)
-    train_loader = DataLoader(train_set,
-                              batch_size=64,
-                              shuffle=True,
-                              drop_last=True)
-    for inputs, labels in train_loader:
-        plot_images_grid(inputs, "bash-log/cifar10v1")
-        # print(labels)
-        break
-
-
 if __name__ == '__main__':
     start_time = time.perf_counter()
     # geo_tran()
     # get_gcn()
-    # cifar10 = CIFAR10Dm(batch_size=64,
-    #                     normal_class=1,
-    #                     radio=0.00,
-    #                     gcn=False,
-    #                     num_workers=1,
-    #                     seed=0)
+    cifar10 = CIFAR10Dm(batch_size=1,
+                        normal_class=1,
+                        radio=0.00,
+                        gcn=False,
+                        num_workers=1,
+                        seed=0)
     # cifar10 = CIFAR10GmTranV1(batch_size=100,
     #                           normal_class=1,
     #                           radio=0.00,
     #                           seed=0,
     #                           gcn=False)
-    cifar10 = CIFAR10GmTranV3(batch_size=64,
-                              normal_class=1,
-                              radio=0.00,
-                              gcn=False,
-                              seed=0)
-    cifar10.setup("fit")
-    train_data = cifar10.train_dataloader()
+    # cifar10 = CIFAR10GmTranV3(batch_size=64,
+    #                           normal_class=1,
+    #                           radio=0.00,
+    #                           gcn=False,
+    #                           seed=0)
+    # cifar10.setup("fit")
+    # train_data = cifar10.train_dataloader()
     # print(len(train_data))
-    for inputs, labels in train_data:
-        # print(inputs.shape)
+    # pl.seed_everything(0, workers=True)
+    train_loader = cifar10.train_dataloader()
+    train_loader_iter = iter(train_loader)
+    cifar10_data = []
+    iter_num = 0
+    for inputs, labels in train_loader_iter:
+        print("iter %d" % iter_num)
+        if iter_num == 2:
+            break
+        print(inputs)
+        b1 = next(train_loader_iter)[0]
+        b2 = next(train_loader_iter)[0]
+        print(b1)
+        print(b2)
+        iter_num += 1
+        # cifar10_data.append(inputs)
         # plot_images_grid(inputs, "bash-log/cifar10v3", padding=0)
-        print(labels)
+        # print(labels)
         # break
 
+    # pl.seed_everything(0, workers=True)
+    # cifar10_data1 = []
+    iter_num = 0
+    for inputs, labels in cifar10.train_dataloader():
+        print("iter %d" % iter_num)
+        if iter_num == 7:
+            break
+        print(inputs[0])
+        iter_num += 1
+    #     cifar10_data1.append(inputs)
+    #     # plot_images_grid(inputs, "bash-log/cifar10v3", padding=0)
+    #     # print(labels)
+    #     # break
+    # for i in range(len(cifar10_data)):
+    #     if not cifar10_data[i].equal(cifar10_data1[i]):
+    #         print('not')
     # cifar10 = CIFAR10GmTranV2(batch_size=100,
     #                           normal_class=1,
     #                           seed=0,

@@ -2,6 +2,8 @@ import argparse
 import os
 import torch
 import numpy as np
+import time
+import optuna
 import random
 from lightning.fabric import seed_everything
 import lightning as pl
@@ -62,3 +64,54 @@ def init_envir():
     torch.cuda.manual_seed_all(args.seed)
 
     return args
+
+
+def optuna_main(args, main, file=__file__):
+    start_time = time.perf_counter()
+    samplers = {
+        'tpe': optuna.samplers.TPESampler(seed=args.seed),
+        'random': optuna.samplers.RandomSampler(seed=args.seed)
+    }
+    pruners = {
+        'median': optuna.pruners.MedianPruner(),
+        'hyper': optuna.pruners.HyperbandPruner()
+    }
+    sampler = samplers[args.sampler]
+    pruner = pruners[args.pruner]
+    if args.progress_bar:
+        if os.path.exists(args.opt_path):
+            os.remove(args.opt_path)
+    storage = optuna.storages.RDBStorage(
+        url="sqlite:///%s" % args.opt_path,
+        engine_kwargs={"connect_args": {
+            "timeout": 1000
+        }})
+    study = optuna.create_study(direction="maximize",
+                                sampler=sampler,
+                                pruner=pruner,
+                                storage=storage,
+                                load_if_exists=True,
+                                study_name="class_%s" % args.normal_class)
+    study.optimize(lambda trial: main(trial,
+                                      bash_log_name=args.bash_log_name,
+                                      normal_class=args.normal_class,
+                                      pre_epochs=args.pre_epochs,
+                                      epochs=args.epochs,
+                                      seed=args.seed,
+                                      radio=args.radio,
+                                      batch_size=args.batch_size,
+                                      enable_progress_bar=args.progress_bar,
+                                      log_path=args.log_path,
+                                      objective=args.objective,
+                                      devices=args.devices),
+                   n_trials=args.n_trials)
+    value_msg = (f"Best value: {study.best_value} "
+                 f"(params: {study.best_params})")
+    sampler_pruner = (f"sampler: {study.sampler.__class__.__name__}, "
+                      f"pruner: {study.pruner.__class__.__name__}")
+    print(value_msg + "\n" + sampler_pruner)
+    # end_time = time.process_time()
+    end_time = time.perf_counter()
+    m, s = divmod(end_time - start_time, 60)
+    h, m = divmod(m, 60)
+    print("process took %02d:%02d:%02d" % (h, m, s))

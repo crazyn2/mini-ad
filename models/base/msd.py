@@ -6,7 +6,7 @@ from lightning_fabric.utilities.seed import seed_everything
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import roc_auc_score
-
+from torcheval.metrics import BinaryAUROC
 # import pytorch_lightning as pl
 import lightning as pl
 
@@ -167,6 +167,8 @@ class BaseMsdV1(pl.LightningModule):
     def on_validation_epoch_end(self):
         # torchmetrics
         # auroc = AUROC(task="binary")
+        auroc = BinaryAUROC()
+        # auroc = AUC()
         unpack_labels_scores = list(zip(*self.validation_step_outputs))
         labels = torch.stack(unpack_labels_scores[0])
         labels_np = labels.cpu().data.numpy()
@@ -174,13 +176,15 @@ class BaseMsdV1(pl.LightningModule):
             scores = torch.stack(unpack_labels_scores[i + 1])
             # torchmetrics aucroc
             # auroc_score_trh = auroc(scores, labels)
+            auroc.update(scores, labels)
+            auroc_score_trh = auroc.compute()
             # sklearn.metrics aucroc
             scores_np = scores.cpu().data.numpy()
             auroc_score_sk = roc_auc_score(labels_np, scores_np)
-            # self.log(aucroc_keys[i] + '_roc_auc_trh',
-            #          auroc_score_trh,
-            #          prog_bar=True,
-            #          sync_dist=True)
+            self.log(self.aucroc_keys[i] + '_roc_auc_trh',
+                     auroc_score_trh,
+                     prog_bar=True,
+                     sync_dist=True)
             self.log(self.aucroc_keys[i] + '_roc_auc_sk',
                      auroc_score_sk,
                      prog_bar=True,

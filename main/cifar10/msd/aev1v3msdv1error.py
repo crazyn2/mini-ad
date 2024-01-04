@@ -24,6 +24,7 @@ def cifar10_lenet(bash_log_name,
                   batch_size,
                   devices=2,
                   enable_progress_bar=False):
+    # pl.seed_everything(seed, workers=True)
     lnr_svdd = AeV1V3MsdV1(seed=seed, objective=objective, visual=args.visual)
     # cifar10 = CIFAR10Dm(batch_size=batch_size,
     #                     seed=seed,
@@ -81,6 +82,14 @@ if __name__ == '__main__':
                   log_path=args.log_path,
                   objective=args.objective,
                   devices=args.devices)
+    # for inputs, _ in cifar10.train_dataloader():
+    #     print(inputs[0])
+    #     break
+    # cifar10 = CIFAR10Dm(batch_size=args.batch_size,
+    #                     seed=args.seed,
+    #                     radio=args.radio,
+    #                     normal_class=args.normal_class)
+    # cifar10.setup("fit")
     cifar10_lenet(bash_log_name=args.bash_log_name,
                   normal_class=args.normal_class,
                   pre_epochs=args.pre_epochs,
@@ -92,6 +101,12 @@ if __name__ == '__main__':
                   log_path=args.log_path,
                   objective=args.objective,
                   devices=args.devices)
+    # for inputs, _ in cifar10.train_dataloader():
+    #     print(inputs[0])
+    #     break
+    # for inputs, _ in cifar10.train_dataloader():
+    #     print(inputs[0])
+    #     break
     end_time = time.perf_counter()
     # end_time = time.process_time()
     m, s = divmod(end_time - start_time, 60)
